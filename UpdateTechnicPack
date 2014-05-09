@@ -32,22 +32,15 @@ define('POST_URL', 'http://www.technicpack.net/modpack/edit_pack');
 
 define('RUNTIME_BOUNDRY', '----FoxCouncilFormBoundary'.strtoupper(base_convert(time(), 10, 36)));
 
+// Do Login
 doRequest(AUTH_URL, array('username' => USER, 'password' => PASS, 'referrer' => 'http://www.technicpack.net/'));
 
-echo 'Logged In...fetching existing data to update MODPACK: '.MODID."\n";
+echo 'Logged In...fetching existing data to update MODID: '.MODID."\n";
 
 // Existing Data
-$payload = doRequest(EDIT_URL, null);
-
-$payloadDOM = new DOMDocument();
-libxml_use_internal_errors(true);
-$payloadDOM->loadHTML($payload);
-libxml_clear_errors();
-
-$payloadXPath = new DOMXPath($payloadDOM);
-
-$payloadArgs = array('name', 'version', 'url', 'short_description');
-$payloadData = array();
+$payloadXPath	= getXPath(doRequest(EDIT_URL, null));
+$payloadArgs	= array('name', 'version', 'url', 'short_description');
+$payloadData	= array();
 
 $payloadData['pack-id'] = MODID;
 
@@ -56,12 +49,12 @@ foreach ($payloadArgs as $arg)
 	$payloadData[$arg] = $payloadXPath->query('//input[@name="'.$arg.'"]')->item(0)->getAttribute('value');
 }
 
-$payloadData['long_description'] =		$payloadXPath->query('//textarea[@name="long_description"]')->item(0)->nodeValue;
-$payloadData['changelog'] =				$payloadXPath->query('//textarea[@name="changelog"]')->item(0)->nodeValue;
-$payloadData['license'] =				$payloadXPath->query('//textarea[@name="license"]')->item(0)->nodeValue;
-$payloadData['minecraft_version_id'] =	$payloadXPath->query('//select[@name="minecraft_version_id"]/option[@selected="selected"]')->item(0)->getAttribute('value');
-$payloadData['is_hidden'] =				(int)($payloadXPath->query('//input[@name="is_hidden" and @checked]')->item(0) != NULL);
-$payloadData['force_directory'] =		(int)($payloadXPath->query('//input[@name="force_directory" and @checked]')->item(0) != NULL);
+$payloadData['long_description']		= $payloadXPath->query('//textarea[@name="long_description"]')->item(0)->nodeValue;
+$payloadData['changelog']				= $payloadXPath->query('//textarea[@name="changelog"]')->item(0)->nodeValue;
+$payloadData['license']					= $payloadXPath->query('//textarea[@name="license"]')->item(0)->nodeValue;
+$payloadData['minecraft_version_id']	= $payloadXPath->query('//select[@name="minecraft_version_id"]/option[@selected="selected"]')->item(0)->getAttribute('value');
+$payloadData['is_hidden']				= (int)($payloadXPath->query('//input[@name="is_hidden" and @checked]')->item(0) != NULL);
+$payloadData['force_directory']			= (int)($payloadXPath->query('//input[@name="force_directory" and @checked]')->item(0) != NULL);
 
 $payloadStage = $payloadData;
 $payloadStage['version'] = $new['version'];
@@ -69,15 +62,7 @@ $payloadStage['url'] = $new['url'];
 
 echo 'Submitting new information to the Technic Platform...'."\n";
 
-$payload = doRequest(POST_URL, $payloadStage, true);
-
-$payloadDOM = new DOMDocument();
-libxml_use_internal_errors(true);
-$payloadDOM->loadHTML($payload);
-libxml_clear_errors();
-
-$payloadXPath = new DOMXPath($payloadDOM);
-
+$payloadXPath = getXPath(doRequest(POST_URL, $payloadStage, true));
 $errorPayload = $payloadXPath->query('//div[@class="alert alert-error"]')->item(0);
 
 if ($errorPayload != null)
@@ -88,8 +73,8 @@ else
 {
 	echo 'Completed!'."\n";
 	echo '======================================================================='."\n";
-	echo 'Version: '.$payloadData['version'].' -> '.$new['version']."\n";
-	echo 'New URL: '.$payloadData['url'].' -> '.$new['url']."\n";
+	echo 'Version: '.$payloadData['version'].	' -> '.$new['version']."\n";
+	echo 'New URL: '.$payloadData['url'].		' -> '.$new['url']."\n";
 }
 
 function doRequest($url, $postArray, $multipart=false)
@@ -126,11 +111,7 @@ function doRequest($url, $postArray, $multipart=false)
 
 	$result = curl_exec($ch);
 
-	$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
 	curl_close($ch);
-
-	// print_r($code);
 
 	if (!$result)
 	{
@@ -156,6 +137,16 @@ function multipart_build_query($fields)
 	$retval .= '--'.RUNTIME_BOUNDRY.'--';
 
 	return $retval;
+}
+
+function getXPath($payload)
+{
+	$payloadDOM = new DOMDocument();
+	libxml_use_internal_errors(true);
+	$payloadDOM->loadHTML($payload);
+	libxml_clear_errors();
+
+	return new DOMXPath($payloadDOM);
 }
 
 ?>
