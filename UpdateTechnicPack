@@ -1,0 +1,161 @@
+#!/usr/bin/php
+<?PHP
+
+define('USER',  '<USERNAME>');
+define('PASS',  '<PASSWORD>');
+define('MODID', '<TECHNIC MODPACK ID>');
+
+if (!function_exists('curl_version'))
+{
+	trigger_error('cURL functions are required to use this tool...', E_USER_ERROR);
+	die();
+}
+
+if (!class_exists('DOMDocument'))
+{
+	trigger_error('DOMDocument class is required to use this tool...', E_USER_ERROR);
+	die();
+}
+
+if ($argc != 3)
+{
+	echo 'Usage: '.$_SERVER['PHP_SELF'].' <version> <url>'."\n";
+	die();
+}
+
+$new['version'] = $argv[1];
+$new['url'] = $argv[2];
+
+define('AUTH_URL', 'http://www.technicpack.net/user/authenticate');
+define('EDIT_URL', 'http://www.technicpack.net/modpack/details/wtfurl.'.MODID.'/edit');
+define('POST_URL', 'http://www.technicpack.net/modpack/edit_pack');
+
+define('RUNTIME_BOUNDRY', '----FoxCouncilFormBoundary'.strtoupper(base_convert(time(), 10, 36)));
+
+doRequest(AUTH_URL, array('username' => USER, 'password' => PASS, 'referrer' => 'http://www.technicpack.net/'));
+
+echo 'Logged In...fetching existing data to update MODPACK: '.MODID."\n";
+
+// Existing Data
+$payload = doRequest(EDIT_URL, null);
+
+$payloadDOM = new DOMDocument();
+libxml_use_internal_errors(true);
+$payloadDOM->loadHTML($payload);
+libxml_clear_errors();
+
+$payloadXPath = new DOMXPath($payloadDOM);
+
+$payloadArgs = array('name', 'version', 'url', 'short_description');
+$payloadData = array();
+
+$payloadData['pack-id'] = MODID;
+
+foreach ($payloadArgs as $arg)
+{
+	$payloadData[$arg] = $payloadXPath->query('//input[@name="'.$arg.'"]')->item(0)->getAttribute('value');
+}
+
+$payloadData['long_description'] =		$payloadXPath->query('//textarea[@name="long_description"]')->item(0)->nodeValue;
+$payloadData['changelog'] =				$payloadXPath->query('//textarea[@name="changelog"]')->item(0)->nodeValue;
+$payloadData['license'] =				$payloadXPath->query('//textarea[@name="license"]')->item(0)->nodeValue;
+$payloadData['minecraft_version_id'] =	$payloadXPath->query('//select[@name="minecraft_version_id"]/option[@selected="selected"]')->item(0)->getAttribute('value');
+$payloadData['is_hidden'] =				(int)($payloadXPath->query('//input[@name="is_hidden" and @checked]')->item(0) != NULL);
+$payloadData['force_directory'] =		(int)($payloadXPath->query('//input[@name="force_directory" and @checked]')->item(0) != NULL);
+
+$payloadStage = $payloadData;
+$payloadStage['version'] = $new['version'];
+$payloadStage['url'] = $new['url'];
+
+echo 'Submitting new information to the Technic Platform...'."\n";
+
+$payload = doRequest(POST_URL, $payloadStage, true);
+
+$payloadDOM = new DOMDocument();
+libxml_use_internal_errors(true);
+$payloadDOM->loadHTML($payload);
+libxml_clear_errors();
+
+$payloadXPath = new DOMXPath($payloadDOM);
+
+$errorPayload = $payloadXPath->query('//div[@class="alert alert-error"]')->item(0);
+
+if ($errorPayload != null)
+{
+	trigger_error(trim($errorPayload->nodeValue), E_USER_ERROR);
+}
+else
+{
+	echo 'Completed!'."\n";
+	echo '======================================================================='."\n";
+	echo 'Version: '.$payloadData['version'].' -> '.$new['version']."\n";
+	echo 'New URL: '.$payloadData['url'].' -> '.$new['url']."\n";
+}
+
+function doRequest($url, $postArray, $multipart=false)
+{
+	$ch = curl_init($url);
+
+	curl_setopt($ch, CURLOPT_POST,					($postArray != null));
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER,		true);
+	curl_setopt($ch, CURLOPT_AUTOREFERER,			true);
+	
+	if ($multipart)
+	{
+		curl_setopt($ch, CURLOPT_BINARYTRANSFER, 	true);
+		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 	true);
+		curl_setopt($ch, CURLOPT_HTTPHEADER, 		array(
+			'Content-Type: multipart/form-data; boundary='.RUNTIME_BOUNDRY,
+			'Referer: '.EDIT_URL,
+			'Origin: http://www.technicpack.net'
+		));
+	}
+	else
+	{
+		curl_setopt($ch, CURLOPT_FOLLOWLOCATION,	true);
+	}
+
+	if ($postArray != null)
+	{
+		curl_setopt($ch, CURLOPT_POSTFIELDS,		$multipart ? multipart_build_query($postArray) : http_build_query($postArray));
+	}
+
+	curl_setopt($ch, CURLOPT_COOKIESESSION,			true);
+	curl_setopt($ch, CURLOPT_COOKIEJAR,				dirname(__FILE__).DIRECTORY_SEPARATOR.'cookies.dat');
+	curl_setopt($ch, CURLOPT_COOKIEFILE,			dirname(__FILE__).DIRECTORY_SEPARATOR.'cookies.dat');
+
+	$result = curl_exec($ch);
+
+	$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+	curl_close($ch);
+
+	// print_r($code);
+
+	if (!$result)
+	{
+		trigger_error('THERE WAS AN ERROR COMMUNICATING WITH TECHNICPACK WEBSITE', E_USER_ERROR);
+		die();
+	}
+
+	return $result;	
+}
+
+function multipart_build_query($fields)
+{
+	$retval = '';
+
+	foreach($fields as $key => $value)
+	{
+		$retval .= '--'.RUNTIME_BOUNDRY."\n";
+		$retval .= 'Content-Disposition: form-data; name="'.$key.'"';
+		$retval .= "\n\n";
+		$retval .= $value."\n";
+	}
+
+	$retval .= '--'.RUNTIME_BOUNDRY.'--';
+
+	return $retval;
+}
+
+?>
